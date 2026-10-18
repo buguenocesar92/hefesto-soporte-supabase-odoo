@@ -4,7 +4,7 @@
 1. Crea o selecciona un proyecto Supabase.
 2. Ejecuta `supabase/migrations/202610130001_hefesto_taller.sql`. El nombre heredado no afecta las tablas exclusivas: hefesto_soporte_states y hefesto_soporte_sessions.
 3. Copia `.env.example` a `.env`. Completa SUPABASE_URL, SUPABASE_SECRET_KEY (sb_secret o service_role), WORKSHOP_ID, ADMIN_PASSWORD (16 caracteres mínimo), PUBLIC_ORIGIN (dominio HTTPS), COOKIE_SECURE=true.
-4. `docker compose -f compose.supabase.yaml up -d --build`. El compose expone el puerto interno `3000` con `expose` (sin publicar al host): en Coolify selecciona ese Compose y Traefik asigna el dominio al servicio `taller`. Para inspección local, publica con `docker compose -f compose.supabase.yaml run --service-ports -p 127.0.0.1:3080:3000 taller`.
+4. `docker compose -f compose.supabase.yaml up -d --build`. El compose expone el puerto interno `3000` con `expose` (sin publicar al host): en Coolify selecciona ese Compose y Traefik asigna el dominio al servicio `taller`. Para inspección local, publica con `docker compose -f compose.supabase.yaml run --rm -p 127.0.0.1:3080:3000 taller`.
 5. Inicia sesión con la contraseña de administración. La clave Supabase se usa solo en servidor.
 
 El servicio Compose conserva el nombre técnico `taller` por compatibilidad del adaptador. Las tablas son exclusivas de Soporte. Si despliegas varios productos en un servidor, asigna dominios propios.
