@@ -53,10 +53,15 @@ generate_env() {
 }
 
 # Aplica las validaciones del contrato a los servicios sin profiles de un render.
-# Imprime violaciones (una por línea) y devuelve 0 si está vacío, 1 si hay.
+# Imprime violaciones (una por línea) y devuelve 0 si está vacío, 1 si hay
+# violaciones o si jq falló. Se evita `jq -e` porque jq 1.7 devuelve código 4
+# cuando el filtro produce `empty` (sin output) en lugar del código 1 esperado,
+# lo que vuelve inutilizable el patrón `jq -e ... select(...)`.
 validate_render() {
   local render="$1" compose_label="$2"
-  printf '%s' "$render" | jq -e -r '
+  local tmp="$TMPDIR_LOCAL/coolify-check.violations.$$"
+  local rc output
+  output="$(printf '%s' "$render" | jq -r '
     .services
     | to_entries[]
     | select((.value.profiles // null) == null)
@@ -72,7 +77,14 @@ validate_render() {
         ipc: (.value.ipc // null),
         sec_unconfined: ((.value.security_opt // []) | any(. == "unconfined")),
         docker_sock: ((.value.volumes // []) | map(select(type == "object" and (.source // "") == "/var/run/docker.sock")) | length > 0),
-        outside_binds: ((.value.volumes // []) | map(select(type == "object" and (.source // "" | type == "string" and startswith("/") and (. != "/data") and (. | test("^/app|^/workspace|^/srv|^/home|^/opt") | not)))) | length > 0)
+        outside_binds: (
+          (.value.volumes // [])
+          | map(select(type == "object" and .type == "bind"))
+          | map(.source // "")
+          | map(select(type == "string"))
+          | map(select(test("^/") or test("^[A-Za-z]:[\\\\/]")))
+          | length > 0
+        )
       }
     | [
         (if .ports > 0 then "ports no permitidos en servicios sin profiles" else empty end),
@@ -85,26 +97,23 @@ validate_render() {
         (if .ipc == "host" then "ipc host no permitido" else empty end),
         (if .sec_unconfined then "security_opt unconfined no permitido" else empty end),
         (if .docker_sock then "docker.sock no permitido" else empty end),
-        (if .outside_binds then "bind fuera del repo" else empty end)
+        (if .outside_binds then "bind fuera del repo (no se permiten bind mounts absolutos en servicios sin profiles)" else empty end)
       ] as $violations
-    | select(($violations | length) > 0)
-    | "\(.svc): \($violations | join("; "))"
-  ' > "$TMPDIR_LOCAL/coolify-check.violations.$$" || {
-    local rc=$?
-    if [[ $rc -ne 1 ]]; then
-      # jq salió con código distinto de 1 → no hubo violaciones (select filtró todo)
-      rm -f "$TMPDIR_LOCAL/coolify-check.violations.$$"
-      return 0
-    fi
-  }
-
-  if [[ -s "$TMPDIR_LOCAL/coolify-check.violations.$$" ]]; then
-    sed "s|^|$compose_label: |" "$TMPDIR_LOCAL/coolify-check.violations.$$" >&2
-    rm -f "$TMPDIR_LOCAL/coolify-check.violations.$$"
+    | if ($violations | length) > 0
+      then "\(.svc): \($violations | join("; "))"
+      else empty
+      end
+  ' 2>/dev/null)"
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "$compose_label: jq falló con código $rc (parser roto: tratar como fail-closed)" >&2
     return 1
   fi
-  rm -f "$TMPDIR_LOCAL/coolify-check.violations.$$"
-  return 0
+  if [[ -z "$output" ]]; then
+    return 0
+  fi
+  printf '%s\n' "$output" | sed "s|^|$compose_label: |" >&2
+  return 1
 }
 
 # Recorre los compose y aplica el contrato.
@@ -117,9 +126,10 @@ main() {
     local label
     label="$(basename "$compose")"
 
-    local tmp_env
+    local tmp_env tmp
     tmp_env="$(mktemp "$TMPDIR_LOCAL/coolify-check.XXXXXX.env")"
-    trap "rm -f $tmp_env $TMPDIR_LOCAL/coolify-check.violations.*" EXIT
+    tmp=""
+    trap "rm -f $tmp_env $tmp" EXIT
 
     generate_env "$compose" "$tmp_env"
 
