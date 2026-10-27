@@ -41,3 +41,39 @@ Node 24: `node --test tests/*.test.mjs`. package.json raíz corresponde a Sites.
 
 ## Oferta comercial
 Una instancia por empresa para administrar contratos de soporte y sus horas. Comercializar instalación, configuración, carga de clientes y soporte mensual. Esta aplicación no factura ni cobra automáticamente esas suscripciones.
+
+## Respaldos
+
+El kit produce respaldos con el contrato canonico de Hefesto Studio
+(`docs/CONTRATO-RESPALDO.md`, que vive en `hefesto-monitor-uptime-kuma` y
+`hefesto-respaldo-kopia`).
+
+```bash
+scripts/respaldar.sh --destino /var/backups/hefesto-soporte --datos /data
+scripts/restaurar.sh --respaldo /var/backups/hefesto-soporte/<timestamp> --destino /data-restaurado
+```
+
+El respaldo sale en `<timestamp>/` con `data.tar.gz`, `SHA256SUMS` y
+`manifest.json` (`software`, `version`, `database`, `sha256`, `status`). El
+`.env` **nunca** viaja en claro: solo viajan los nombres de las variables. La
+auditoria queda fuera del repositorio, en
+`$XDG_STATE_HOME/hefesto-respaldo/audit.log`.
+
+## Alcance de la integracion Odoo
+
+Hoy la integracion con Odoo es de **preparacion CSV**
+(`migration/prepare_odoo.py`): exporta el estado del kit a CSV, con su JSON
+completo y su LEEME. No hay cliente Odoo, ni XML-RPC, ni job de sincronizacion,
+ni host de Odoo configurado. El modulo `odoo/` es codigo fuente para instalar a
+mano en una instancia propia del cliente; este kit no la opera ni la despliega.
+
+## Puertas de calidad
+
+| Puerta | Comando |
+| --- | --- |
+| Pruebas | `npm test` |
+| Tipos | `npm run typecheck` |
+| Lint | `npm run lint` |
+| Build portable | `npm run build:portable` |
+| Compose | `npm run check:coolify` |
+| Respaldo | `bats tests/backup_restore.bats` |

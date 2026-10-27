@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+const raiz=fileURLToPath(new URL('..',import.meta.url));
+const correr=(args)=>execFileSync('bash',args,{encoding:'utf8'});
+test('el respaldo produce data.tar.gz, SHA256SUMS y manifest.json con las cinco claves',()=>{
+  const base=mkdtempSync(join(tmpdir(),'hefesto-respaldo-'));
+  const datos=join(base,'datos');mkdirSync(datos,{recursive:true});
+  writeFileSync(join(datos,'estado.json'),JSON.stringify({clientes:['c1']}));
+  writeFileSync(join(datos,'.env'),'ADMIN_PASSWORD=valor-secreto\nSUPABASE_SECRET_KEY=otra-clave\n');
+  const destino=join(base,'destino');mkdirSync(destino);
+  const audit=join(base,'audit.log');
+  const run_dir=correr([join(raiz,'scripts/respaldar.sh'),'--destino',destino,'--datos',datos,'--audit-log',audit]).trim().split('\n').pop();
+  assert.ok(existsSync(join(run_dir,'data.tar.gz')),'falta data.tar.gz');
+  assert.ok(existsSync(join(run_dir,'SHA256SUMS')),'falta SHA256SUMS');
+  const man=JSON.parse(readFileSync(join(run_dir,'manifest.json'),'utf8'));
+  for(const k of ['software','version','database','sha256','status'])assert.ok(k in man,'falta la clave '+k);
+  assert.equal(man.status,'completed');
+  assert.equal(man.env_included,false);
+  assert.ok(man.env_vars.includes('ADMIN_PASSWORD'),'deben viajar los NOMBRES de las variables');
+  assert.equal(man.env_vars.includes('valor-secreto'),false,'los valores jamas viajan');
+  const suma=correr(['-c','tar -xzOf "$1"','bash',join(run_dir,'data.tar.gz')]);
+  assert.equal(suma.includes('valor-secreto'),false,'el .env no debe quedar en claro dentro del respaldo');
+  assert.ok(existsSync(audit),'debe existir el log de auditoria');
+  assert.match(readFileSync(audit,'utf8'),/resultado=completed/);
+  rmSync(base,{recursive:true,force:true});
+});
+test('la restauracion valida manifiesto, checksum, rutas y destino vacio',()=>{
+  const base=mkdtempSync(join(tmpdir(),'hefesto-restaurar-'));
+  const datos=join(base,'datos');mkdirSync(datos,{recursive:true});
+  writeFileSync(join(datos,'estado.json'),'{}');
+  const destino=join(base,'destino');mkdirSync(destino);
+  const audit=join(base,'audit.log');
+  const run_dir=correr([join(raiz,'scripts/respaldar.sh'),'--destino',destino,'--datos',datos,'--audit-log',audit]).trim().split('\n').pop();
+  const restore=join(base,'restaurado');
+  correr([join(raiz,'scripts/restaurar.sh'),'--respaldo',run_dir,'--destino',restore,'--audit-log',audit]);
+  assert.ok(existsSync(join(restore,'datos','estado.json')),'debe restaurar los datos');
+  const vacio=join(base,'vacio');mkdirSync(vacio);
+  correr([join(raiz,'scripts/restaurar.sh'),'--respaldo',run_dir,'--destino',vacio,'--audit-log',audit]);
+  writeFileSync(join(vacio,'ocupado.txt'),'x');
+  assert.throws(()=>correr([join(raiz,'scripts/restaurar.sh'),'--respaldo',run_dir,'--destino',vacio,'--audit-log',audit]),
+    'un destino no vacio debe rechazarse');
+  const man=JSON.parse(readFileSync(join(run_dir,'manifest.json'),'utf8'));man.status='failed';
+  writeFileSync(join(run_dir,'manifest.json'),JSON.stringify(man));
+  const otro=join(base,'otro');mkdirSync(otro);
+  assert.throws(()=>correr([join(raiz,'scripts/restaurar.sh'),'--respaldo',run_dir,'--destino',otro,'--audit-log',audit]),
+    'un status distinto de completed debe rechazarse');
+  assert.match(readFileSync(audit,'utf8'),/resultado=rechazado-manifiesto/,'el rechazo debe quedar auditado');
+  rmSync(base,{recursive:true,force:true});
+});

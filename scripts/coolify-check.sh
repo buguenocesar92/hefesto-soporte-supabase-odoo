@@ -179,6 +179,9 @@ main() {
     local tmp_env stderr_file
     tmp_env="$(mktemp "$TMPDIR_LOCAL/coolify-check.XXXXXX.env")"
     stderr_file="$(mktemp "$TMPDIR_LOCAL/coolify-check.XXXXXX.stderr")"
+    # shellcheck disable=SC2064
+    # La expansion debe ocurrir al instalar la trampa: tmp_env y stderr_file
+    # son locales a esta funcion y ya no existiran cuando la trampa corra.
     trap "rm -f $tmp_env $stderr_file" EXIT
 
     generate_env "$compose" "$tmp_env"

@@ -1,10 +1,11 @@
 FROM node:24-bookworm-slim AS build
-WORKDIR /app
+WORKDIR /app/portable
 COPY portable/package.json ./package.json
 RUN npm install --ignore-scripts --no-audit --no-fund
-COPY app/page.tsx app/globals.css ./app/
-COPY lib ./lib
-COPY portable ./portable
+COPY app/page.tsx app/globals.css /app/app/
+COPY lib /app/lib/
+COPY portable/frontend ./frontend
+COPY portable/vite.config.mts ./vite.config.mts
 RUN npm run build
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data

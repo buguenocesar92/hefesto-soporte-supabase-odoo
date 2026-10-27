@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Suite de pruebas
+        run: npm test
+      - name: Analisis estatico
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Compilacion portable
+        run: npm run build:portable
+      - name: Comprobacion de compose
+        run: npm run check:coolify
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks sobre el repositorio
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+      - name: gitleaks sobre el historial
+        run: gitleaks detect --source . --log-opts="--all" --redact --no-banner
